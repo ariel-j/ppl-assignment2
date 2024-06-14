@@ -1,6 +1,6 @@
-import { ClassExp, ProcExp, Exp, Program } from "./L3-ast";
+import { ClassExp, ProcExp, Exp, Program, IfExp } from "./L3-ast";
 import { Result, makeFailure } from "../shared/result";
-import { CExp, makeProcExp, Binding } from "./L3-ast";
+import { CExp, makeProcExp, Binding, makeAppExp, makeVarDecl, makePrimOp, makeIfExp, makeBoolExp, makeVarRef} from "./L3-ast";
 
 /*
 Purpose: Transform ClassExp to ProcExp
@@ -9,26 +9,21 @@ Type: ClassExp => ProcExp
 */
 
 export const class2proc = (exp: ClassExp): ProcExp => 
-    
-        (define pair
-            (lambda (a b)
-            (lambda (msg)
-            (if (eq? msg 'first)
-            ((lambda () a) )
-            (if (eq? msg 'second)
-            ((lambda () b) )
-            (if (eq? msg 'sum)
-            ((lambda () (+ a b)) )
-            #f))))))
+    makeProcExp(
+        exp.fields,
+        [makeProcExp(
+            [makeVarDecl("msg")], 
+            [makeConditions(exp.methods, 0)])]     
     );
 
-    /*
-    makeProcExp(
-        exp.fields, 
-        exp.methods.map((binding : Binding) : ProcExp => 
-            makeProcExp([binding.var],[binding.val])
-        )*/
-
+    const makeConditions : (methods: Binding[], i : number) => CExp = (methods, i) => 
+        i === methods.length ?  
+            makeBoolExp(false) :
+            makeIfExp(
+                makeAppExp(makePrimOp("="),[makeVarRef("msg"), makeVarRef(methods[i].var.var)]),
+                methods[i].val,
+                makeConditions(methods,i+1)
+            ) 
 
 
 
