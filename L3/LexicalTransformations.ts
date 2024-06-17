@@ -21,7 +21,7 @@ export const class2proc = (exp: ClassExp): ProcExp =>
             makeBoolExp(false) :
             makeIfExp(
                 makeAppExp(makePrimOp("eq?"),[makeVarRef("msg"), makeLitExp({ tag: "SymbolSExp", val: methods[i].var.var })]),
-                methods[i].val,
+                makeAppExp(methods[i].val,[]),
                 makeConditions(methods,i+1)
             ) 
 
