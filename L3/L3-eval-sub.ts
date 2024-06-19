@@ -100,9 +100,9 @@ const applyObject = (ob : Object, args : Value[], env : Env) : Result<Value> => 
     const methodsCExp : CExp[] = map((m : Binding) : CExp => m.val, ob.methods);  
     // Check if the method exists
     const pos: number = isSymbolSExp(args[0]) ? methodNames.indexOf((args[0]).val) : -1;
-    const rProc : Result<CExp> = pos === -1 ? makeFailure(`Unrecognized method: ${valueToString(args[0])}`) :  makeOk(methodsCExp[pos]);
-    // Check if procedure
-    const rClosure : Result<Closure> = bind(rProc, (proc : CExp) => isProcExp(proc) ? evalProc(proc, env) : makeFailure(`Unrecognized method: ${valueToString(args[0])}`));
+    const rCexp : Result<CExp> = pos === -1 ? makeFailure(`Unrecognized method: ${valueToString(args[0])}`) :  makeOk(methodsCExp[pos]);
+    // Check if procedure and apply and apply again.
+    const rClosure : Result<Closure> = bind(rCexp, (proc : CExp) => isProcExp(proc) ? evalProc(proc, env) : makeFailure(`Unrecognized method: ${valueToString(args[0])}`));
     return isOk(rClosure)? applyClosure(rClosure.value, args.slice(1), env) : rClosure;
     
 
