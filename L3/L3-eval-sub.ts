@@ -1,6 +1,6 @@
 // L3-eval.ts
-import { map } from "ramda";
-import { isCExp, isLetExp } from "./L3-ast";
+import { indexOf, map, zipWith } from "ramda";
+import { Binding, ClassExp, isCExp, isClassExp, isLetExp, makeBinding, makeClassExp } from "./L3-ast";
 import { BoolExp, CExp, Exp, IfExp, LitExp, NumExp,
          PrimOp, ProcExp, Program, StrExp, VarDecl } from "./L3-ast";
 import { isAppExp, isBoolExp, isDefineExp, isIfExp, isLitExp, isNumExp,
@@ -8,10 +8,10 @@ import { isAppExp, isBoolExp, isDefineExp, isIfExp, isLitExp, isNumExp,
 import { makeBoolExp, makeLitExp, makeNumExp, makeProcExp, makeStrExp } from "./L3-ast";
 import { parseL3Exp } from "./L3-ast";
 import { applyEnv, makeEmptyEnv, makeEnv, Env } from "./L3-env-sub";
-import { isClosure, makeClosure, Closure, Value } from "./L3-value";
+import { isClosure, makeClosure, Closure, Value, isClass, makeClass, Class, makeObject, isObject, Object, isSymbolSExp, valueToString } from "./L3-value";
 import { first, rest, isEmpty, List, isNonEmptyList } from '../shared/list';
 import { isBoolean, isNumber, isString } from "../shared/type-predicates";
-import { Result, makeOk, makeFailure, bind, mapResult, mapv } from "../shared/result";
+import { Result, makeOk, makeFailure, bind, mapResult, mapv, isOk } from "../shared/result";
 import { renameExps, substitute } from "./substitute";
 import { applyPrimitive } from "./evalPrimitive";
 import { parse as p } from "../shared/parser";
@@ -30,13 +30,14 @@ const L3applicativeEval = (exp: CExp, env: Env): Result<Value> =>
     isLitExp(exp) ? makeOk(exp.val) :
     isIfExp(exp) ? evalIf(exp, env) :
     isProcExp(exp) ? evalProc(exp, env) :
-    isAppExp(exp) ? bind(L3applicativeEval(exp.rator, env), (rator: Value) =>
+    isAppExp(exp) ? bind(L3applicativeEval(exp.rator, env), (rator: Value) => 
                         bind(mapResult(param => 
                             L3applicativeEval(param, env), 
                               exp.rands), 
                             (rands: Value[]) =>
                                 L3applyProcedure(rator, rands, env))) :
     isLetExp(exp) ? makeFailure('"let" not supported (yet)') :
+    isClassExp(exp) ? evalClass(exp, env) :
     makeFailure('Never');
 
 export const isTrueValue = (x: Value): boolean =>
@@ -53,19 +54,23 @@ const evalProc = (exp: ProcExp, env: Env): Result<Closure> =>
 const L3applyProcedure = (proc: Value, args: Value[], env: Env): Result<Value> =>
     isPrimOp(proc) ? applyPrimitive(proc, args) :
     isClosure(proc) ? applyClosure(proc, args, env) :
+    isClass(proc) ? applyClass(proc, args, env) :
+    isObject(proc) ? applyObject(proc, args, env) :
     makeFailure(`Bad procedure ${format(proc)}`);
 
 // Applications are computed by substituting computed
 // values into the body of the closure.
 // To make the types fit - computed values of params must be
 // turned back in Literal Expressions that eval to the computed value.
-const valueToLitExp = (v: Value): NumExp | BoolExp | StrExp | LitExp | PrimOp | ProcExp =>
+const valueToLitExp = (v: Value): NumExp | BoolExp | StrExp | LitExp | PrimOp | ProcExp | ClassExp =>
     isNumber(v) ? makeNumExp(v) :
     isBoolean(v) ? makeBoolExp(v) :
     isString(v) ? makeStrExp(v) :
     isPrimOp(v) ? v :
     isClosure(v) ? makeProcExp(v.params, v.body) :
+    isClass(v) ? makeClassExp(v.fields, v.methods) :
     makeLitExp(v);
+
 
 const applyClosure = (proc: Closure, args: Value[], env: Env): Result<Value> => {
     const vars = map((v: VarDecl) => v.var, proc.params);
@@ -73,6 +78,34 @@ const applyClosure = (proc: Closure, args: Value[], env: Env): Result<Value> => 
     const litArgs : CExp[] = map(valueToLitExp, args);
     return evalSequence(substitute(body, vars, litArgs), env);
     //return evalSequence(substitute(proc.body, vars, litArgs), env);
+}
+
+const applyClass = (cl : Class, args : Value[], env : Env) : Result<Value> =>{
+    const vars = map((v: VarDecl) => v.var, cl.fields); // The names of the fields to insert
+    const methodCExps = renameExps(map((m : Binding) : CExp => m.val ,cl.methods)); // rename all the args inside the bindings CExp's
+    const litArgs : CExp[] = map(valueToLitExp, args); // Var's values in CExp
+    return makeOk(makeObject(
+        zipWith(
+        makeBinding,
+        map((m : Binding) : string => m.var.var ,cl.methods), 
+        substitute(methodCExps, vars, litArgs)         // Inserts the class' fields into each method
+        )
+    )); 
+} 
+    
+    
+const applyObject = (ob : Object, args : Value[], env : Env) : Result<Value> => {
+    // Divide Methods(bindings) to vars(names) and vals(CExp) 
+    const methodNames : string[] = map((m : Binding) : string => m.var.var, ob.methods); 
+    const methodsCExp : CExp[] = map((m : Binding) : CExp => m.val, ob.methods);  
+    // Check if the method exists
+    const pos: number = isSymbolSExp(args[0]) ? methodNames.indexOf((args[0]).val) : -1;
+    const rProc : Result<CExp> = pos === -1 ? makeFailure(`Unrecognized method: ${valueToString(args[0])}`) :  makeOk(methodsCExp[pos]);
+    // Check if procedure
+    const rClosure : Result<Closure> = bind(rProc, (proc : CExp) => isProcExp(proc) ? evalProc(proc, env) : makeFailure(`Unrecognized method: ${valueToString(args[0])}`));
+    return isOk(rClosure)? applyClosure(rClosure.value, args.slice(1), env) : rClosure;
+    
+
 }
 
 // Evaluate a sequence of expressions (in a program)
@@ -98,6 +131,10 @@ const evalDefineExps = (def: Exp, exps: Exp[], env: Env): Result<Value> =>
                                     makeEnv(def.var.var, rhs, env))) :
     makeFailure(`Unexpected in evalDefine: ${format(def)}`);
 
+//Class
+export const evalClass = (exp : ClassExp, env : Env) : Result<Class> => 
+    makeOk(makeClass(exp.fields, exp.methods));
+
 // Main program
 export const evalL3program = (program: Program): Result<Value> =>
     evalSequence(program.exps, makeEmptyEnv());
@@ -106,3 +143,4 @@ export const evalParse = (s: string): Result<Value> =>
     bind(p(s), (sexp: Sexp) => 
         bind(parseL3Exp(sexp), (exp: Exp) =>
             evalSequence([exp], makeEmptyEnv())));
+

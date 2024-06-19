@@ -48,19 +48,41 @@ export type Class = {
     methods: Binding[];
     env: Env;
 }
-export const makeClass = (fields : VarDecl[], methods : Binding[], env : Env) : Class => 
+export const makeClass = (fields : VarDecl[], methods : Binding[]) : Class => 
+    ({tag: "Class", fields: fields, methods: methods, env: makeEmptyEnv()});
+
+export const makeClassEnv = (fields : VarDecl[], methods : Binding[], env : Env) : Class => 
     ({tag: "Class", fields: fields, methods: methods, env: env});
+
 
 export const isClass = (x :any) : x is Class => x.tag === "Class";
 
-//toCheck
 export const classToString = (c: Class) : string => 
-    `<Closure ${c.fields} ${c.methods}>`
+    `Class`
 
-export type SExpValue = number | boolean | string | PrimOp | Closure | SymbolSExp | EmptySExp | CompoundSExp | Class;
+// Object value - class instance
+export type Object = {
+    tag: "Object",
+    methods: Binding[];
+    env: Env;
+}
+
+export const makeObject = ( methods: Binding[]) : Object =>
+    ({tag: "Object",  methods: methods, env: makeEmptyEnv()});
+
+export const makeObjectEnv = ( methods: Binding[], env : Env) : Object =>
+    ({tag: "Object",  methods: methods, env: env});
+
+export const isObject = (x :any) : x is Object => x.tag === "Object";
+
+export const ObjectToString = (c: Object) : string => 
+    `Object`
+
+
+export type SExpValue = number | boolean | string | PrimOp | Closure | SymbolSExp | EmptySExp | CompoundSExp | Class | Object;
 export const isSExp = (x: any): x is SExpValue =>
     typeof(x) === 'string' || typeof(x) === 'boolean' || typeof(x) === 'number' ||
-    isSymbolSExp(x) || isCompoundSExp(x) || isEmptySExp(x) || isPrimOp(x) || isClosure(x) || isClass(x);
+    isSymbolSExp(x) || isCompoundSExp(x) || isEmptySExp(x) || isPrimOp(x) || isClosure(x) || isClass(x) || isObject(x);
 
 export const makeCompoundSExp = (val1: SExpValue, val2: SExpValue): CompoundSExp =>
     ({tag: "CompoundSexp", val1: val1, val2 : val2});
@@ -102,4 +124,5 @@ export const valueToString = (val: Value): string =>
     isEmptySExp(val) ? "'()" :
     isCompoundSExp(val) ? compoundSExpToString(val) :
     isClass(val) ? classToString(val) :
+    isObject(val) ? ObjectToString(val) :
     val;
